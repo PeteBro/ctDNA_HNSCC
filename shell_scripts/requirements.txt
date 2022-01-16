@@ -1,0 +1,7 @@
+FastQC/0.11.9
+Trimmomatic/0.39
+gzip/1.10
+BWA/0.7.17
+SAMtools/1.10
+
+
