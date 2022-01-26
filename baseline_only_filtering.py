@@ -10,7 +10,6 @@ subjects = [110, 133, 134, 141, 142, 150, 155, 165, 171]
 data = {subject : pd.read_csv(f'outputs/baseline_only/{subject}.tsv', sep='\t') for subject in subjects}
 
 # drop variants with NaN values
-
 for subject in subjects:
     data[subject] = lq.drop_nans(data[subject])
 
@@ -34,8 +33,8 @@ for subject in subjects:
     # remove any remaining variants recognized as somatic
     data_tree[subject] = lq.remove_somatic_candidates(data_tree[subject])
     # remove any variants with a VAF < 5% in all samples
-    data_tree[subject] = lq.filter_VAF(data_tree[subject], 5, [f'{subject}_Buffy', 'somatic_candidate'])
-    #data_tree[subject] = lq.filter_VAF_temp(data_tree[subject], 5, {'entry' : f'{subject}A', 'min' : 0.1}, [f'{subject}_Buffy', 'somatic_candidate'])
+    data_tree[subject] = lq.filter_VAF(data_tree[subject], 0.1, [f'{subject}_Buffy', 'somatic_candidate'])
+    #data_tree[subject] = lq.filter_VAF_venns(data_tree[subject], 5, {'entry' : f'{subject}A', 'min' : 5}, [f'{subject}_Buffy', 'somatic_candidate'])
     # fit filtering parameters to data
     tempdata = lq.fit_filter(data[subject], data_tree[subject])
     # save filtered data
