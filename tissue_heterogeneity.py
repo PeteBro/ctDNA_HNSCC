@@ -1,5 +1,6 @@
 # import and define variables + functions
 
+import itertools
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -60,41 +61,57 @@ intv = np.vectorize(intg)
 
 data = {subject: pd.read_csv(f'outputs/tissue_data/{subject}_filtered.tsv', sep = '\t') for subject in subjects}
 
+# get variant locations
+
+propdict = {}
+per_gene = {subject : {} for subject in subjects}
+total_het = {subject : {} for subject in subjects}
 for subject in subjects:
-    cov = pd.DataFrame(lq.get_coverage(data[subject]))
-    cov.to_csv(f'outputs/tissue_data/{subject}_coverage.tsv', sep = '\t', index = False)
+    y = np.zeros([2,len(data[subject])])
+    y[0] = intv(np.array([i.split(':') for i in data[subject][f'{subject}_Core']]).T[5])
+    y[1] = intv(np.array([i.split(':') for i in data[subject][f'{subject}_Margin']]).T[5])
+    locgen = np.array(data[subject]['GENE'])
+    f = classify_loc(y.T)
+    for gene in locgen:
+        idx = np.where(locgen==gene)[0]
+        per_gene[subject][gene] = f[idx]
 
-# find where variants occur in the tissue samples on a per-gene basis
+# get proportional heterogeneity
 
-locs = {subject : {} for subject in subjects}
-for subject in subjects:
-    for gene in np.unique(data[subject]['GENE']):
-        tempt = data[subject].iloc[np.where(data[subject]['GENE'] == f'{gene}')[0]]
-        y = np.zeros([2,len(tempt)])
-        y[0] = intv(np.array([i.split(':') for i in tempt[f'{subject}_Core']]).T[5])
-        y[1] = intv(np.array([i.split(':') for i in tempt[f'{subject}_Margin']]).T[5])
-        y = y.T
-        locs[subject][gene] = classify_loc(y)
+    propdict[subject] = {gene : get_props(per_gene[subject][gene]) for gene in per_gene[subject]}
+    x = np.mean([propdict[subject][i]['core'] for i in propdict[subject]])
+    y = np.mean([propdict[subject][i]['margin'] for i in propdict[subject]])
+    z = np.mean([propdict[subject][i]['both'] for i in propdict[subject]])
+    l = np.mean([propdict[subject][i]['rate'] for i in propdict[subject]])
+    total_het[subject]['core'] = x
+    total_het[subject]['margin'] = y
+    total_het[subject]['both'] = z
+    total_het[subject]['rate'] = l
 
-# calculate proportional occurence
-
-props = {subject : {gene : get_props(locs[subject][gene]) for gene in locs[subject]} for subject in subjects}
-
+df = pd.DataFrame(total_het).T
+fig, ax = plt.subplots(figsize=(12,8))
+ax.set_ylim(0,1)
+ax.bar([str(s) for s in subjects], np.array(df['core']),  label='Tumour Core Only')
+ax.bar([str(s) for s in subjects], np.array(df['margin']), bottom=(np.array(df['core'])), label ='Tumour Margin Only')
+ax.bar([str(s) for s in subjects], np.array(df['both']), bottom=(np.array(df['margin'])+np.array(df['core'])), label='Tumour Core and Margin')
+plt.title('Average heterogeneity variants in tumour tissue samples')
+fig.legend()
+plt.savefig('outputs/tissue_data/mean_plot.svg', format='svg')
+plt.savefig('outputs/tissue_data/mean_plot')
+pd.DataFrame(total_het).to_csv('outputs/tissue_data/mean_plot.tsv', sep='\t')
 het_measures = {region : {subject : {} for subject in subjects} for region in ['core', 'margin', 'both', 'rate']}
 for region in ['core', 'margin', 'both', 'rate']:
     for subject in subjects:
         for gene in genes:
-            if gene in props[subject]:
-                het_measures[region][subject][gene] = props[subject][gene][region]
+            if gene in propdict[subject]:
+                het_measures[region][subject][gene] = propdict[subject][gene][region]
             else:
                 het_measures[region][subject][gene] = np.NaN
 
-# plot
-
-titles = {'core' : 'Proportion of all variants observed exclusively in tumour centre',
-          'margin' : 'Proportion of all variants observed exclusively in tumour peripheral tissue',
-          'both' : 'Proportion of all variants observed in both peripheral and central tumour tissue',
-          'rate' : 'Rate of intratumoral heterogeneity for all variants'}
+titles = {'core' : 'Proportion of variants observed exclusively in tumour centre',
+          'margin' : 'Proportion of variants observed exclusively in tumour peripheral tissue',
+          'both' : 'Proportion of variants observed in both peripheral and central tumour tissue',
+          'rate' : 'Rate of intratumoral heterogeneity for variants'}
 
 for reg in ['core', 'margin', 'both', 'rate']:
    plt.ioff()
@@ -106,58 +123,53 @@ for reg in ['core', 'margin', 'both', 'rate']:
    plt.savefig(f'outputs/tissue_data/{reg}')
    plt.clf()
 
-# do the same for all variants regardless of gene
+# repeat for HNSCC associated variants
 
-locs = {subject : {} for subject in subjects}
+data = {subject: pd.read_csv(f'outputs/tissue_data/{subject}_filtered_HNSCC.tsv', sep = '\t') for subject in subjects}
+
+propdict = {}
+per_gene = {subject : {} for subject in subjects}
+total_het = {subject : {} for subject in subjects}
 for subject in subjects:
-        y = np.zeros([2,len(data[subject])])
-        y[0] = intv(np.array([i.split(':') for i in data[subject][f'{subject}_Core']]).T[5])
-        y[1] = intv(np.array([i.split(':') for i in data[subject][f'{subject}_Margin']]).T[5])
-        y = y.T
-        locs[subject] = classify_loc(y)
+    y = np.zeros([2,len(data[subject])])
+    y[0] = intv(np.array([i.split(':') for i in data[subject][f'{subject}_Core']]).T[5])
+    y[1] = intv(np.array([i.split(':') for i in data[subject][f'{subject}_Margin']]).T[5])
+    locgen = np.array(data[subject]['GENE'])
+    f = classify_loc(y.T)
+    for gene in locgen:
+        idx = np.where(locgen==gene)[0]
+        per_gene[subject][gene] = f[idx]
+    
+    propdict[subject] = {gene : get_props(per_gene[subject][gene]) for gene in per_gene[subject]}
+    x = np.mean([propdict[subject][i]['core'] for i in propdict[subject]])
+    y = np.mean([propdict[subject][i]['margin'] for i in propdict[subject]])
+    z = np.mean([propdict[subject][i]['both'] for i in propdict[subject]])
+    l = np.mean([propdict[subject][i]['rate'] for i in propdict[subject]])
+    total_het[subject]['core'] = x
+    total_het[subject]['margin'] = y
+    total_het[subject]['both'] = z
+    total_het[subject]['rate'] = l
 
-het_all = {subject : get_props(locs[subject]) for subject in subjects}
-
-subjects = list(het_all.keys())
-df = pd.DataFrame(het_all).T
+df = pd.DataFrame(total_het).T
 fig, ax = plt.subplots(figsize=(12,8))
 ax.set_ylim(0,1)
 ax.bar([str(s) for s in subjects], np.array(df['core']),  label='Tumour Core Only')
 ax.bar([str(s) for s in subjects], np.array(df['margin']), bottom=(np.array(df['core'])), label ='Tumour Margin Only')
 ax.bar([str(s) for s in subjects], np.array(df['both']), bottom=(np.array(df['margin'])+np.array(df['core'])), label='Tumour Core and Margin')
-plt.title('Average heterogeneity of all variants in tumour tissue samples')
+plt.title('Average heterogeneity HNSCC associated variants in tumour tissue samples')
 fig.legend()
-plt.savefig('outputs/tissue_data/mean_plot.svg', format='svg')
-plt.savefig('outputs/tissue_data/mean_plot')
-
-
-# repeat, this time examining only COSMIC annotated variants with known roles in HNSCC
-
-data = {subject: pd.read_csv(f'outputs/tissue_data/{subject}_filtered_HNSCC.tsv', sep = '\t') for subject in subjects}
-for subject in subjects:
-    cov = pd.DataFrame(lq.get_coverage(data[subject]))
-    cov.to_csv(f'outputs/tissue_data/{subject}_coverage_HNSCC.tsv', sep = '\t', index = False)
-
-locs = {subject : {} for subject in subjects}
-for subject in subjects:
-    for gene in np.unique(data[subject]['GENE']):
-        tempt = data[subject].iloc[np.where(data[subject]['GENE'] == f'{gene}')[0]]
-        y = np.zeros([2,len(tempt)])
-        y[0] = intv(np.array([i.split(':') for i in tempt[f'{subject}_Core']]).T[5])
-        y[1] = intv(np.array([i.split(':') for i in tempt[f'{subject}_Margin']]).T[5])
-        y = y.T
-        locs[subject][gene] = classify_loc(y)
-
-props = {subject : {gene : get_props(locs[subject][gene]) for gene in locs[subject]} for subject in subjects}
-
+plt.savefig('outputs/tissue_data/mean_plot_HNSCC.svg', format='svg')
+plt.savefig('outputs/tissue_data/mean_plot_HNSCC')
+pd.DataFrame(total_het).to_csv('outputs/tissue_data/mean_plot.tsv', sep='\t')
 het_measures = {region : {subject : {} for subject in subjects} for region in ['core', 'margin', 'both', 'rate']}
 for region in ['core', 'margin', 'both', 'rate']:
     for subject in subjects:
         for gene in genes:
-            if gene in props[subject]:
-                het_measures[region][subject][gene] = props[subject][gene][region]
+            if gene in propdict[subject]:
+                het_measures[region][subject][gene] = propdict[subject][gene][region]
             else:
                 het_measures[region][subject][gene] = np.NaN
+
 
 titles = {'core' : 'Proportion of HNSCC associated variants observed exclusively in tumour centre',
           'margin' : 'Proportion of HNSCC associated variants observed exclusively in tumour peripheral tissue',
@@ -173,25 +185,3 @@ for reg in ['core', 'margin', 'both', 'rate']:
    plt.savefig(f'outputs/tissue_data/{reg}_HNSCC.svg', format='svg')
    plt.savefig(f'outputs/tissue_data/{reg}_HNSCC')
    plt.clf()
-
-locs = {subject : {} for subject in subjects}
-for subject in subjects:
-        y = np.zeros([2,len(data[subject])])
-        y[0] = intv(np.array([i.split(':') for i in data[subject][f'{subject}_Core']]).T[5])
-        y[1] = intv(np.array([i.split(':') for i in data[subject][f'{subject}_Margin']]).T[5])
-        y = y.T
-        locs[subject] = classify_loc(y)
-
-het_all = {subject : get_props(locs[subject]) for subject in subjects}
-
-subjects = list(het_all.keys())
-df = pd.DataFrame(het_all).T
-fig, ax = plt.subplots(figsize=(12,8))
-ax.set_ylim(0,1)
-ax.bar([str(s) for s in subjects], np.array(df['core']),  label='Tumour Core Only')
-ax.bar([str(s) for s in subjects], np.array(df['margin']), bottom=(np.array(df['core'])), label ='Tumour Margin Only')
-ax.bar([str(s) for s in subjects], np.array(df['both']), bottom=(np.array(df['margin'])+np.array(df['core'])), label='Tumour Core and Margin')
-plt.title('Average heterogeneity of HNSCC associated variants in tumour tissue samples')
-fig.legend()
-plt.savefig('outputs/tissue_data/mean_plot_HNSCC.svg', format='svg')
-plt.savefig('outputs/tissue_data/mean_plot_HNSCC')
